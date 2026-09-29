@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<section class="card">
+    <form class="search" method="GET" action="{{ url_for('listar_clientes') }}">
+        <input
+            type="text"
+            name="q"
+            value="{{ termino }}"
+            placeholder="Buscar por nombre, email, telefono o empresa"
+        />
+        <button class="btn" type="submit">Buscar</button>
+        {% if termino %}
+            <a class="btn btn-light" href="{{ url_for('listar_clientes') }}">Limpiar</a>
+        {% endif %}
+    </form>
+</section>
+
+<section class="card">
+    {% if clientes %}
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Nombre</th>
+                        <th>Email</th>
+                        <th>Telefono</th>
+                        <th>Empresa</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cliente in clientes %}
+                        <tr>
+                            <td>{{ cliente.id }}</td>
+                            <td>{{ cliente.nombre }}</td>
+                            <td>{{ cliente.email }}</td>
+                            <td>{{ cliente.telefono }}</td>
+                            <td>{{ cliente.empresa or '-' }}</td>
+                            <td class="actions">
+                                <a class="btn btn-light" href="{{ url_for('editar_cliente', cliente_id=cliente.id) }}">Editar</a>
+                                <form method="POST" action="{{ url_for('eliminar_cliente', cliente_id=cliente.id) }}" onsubmit="return confirm('¿Deseas eliminar este cliente?');">
+                                    <button class="btn btn-danger" type="submit">Eliminar</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty">No hay clientes registrados todavia.</p>
+    {% endif %}
+</section>
+{% endblock %}

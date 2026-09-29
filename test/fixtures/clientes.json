@@ -1,0 +1,18 @@
+[
+  {
+    "id": 1,
+    "nombre": "Ana García",
+    "email": "ana.garcia@example.com",
+    "telefono": "5551001001",
+    "empresa": "Acme",
+    "creado_en": "2026-01-15T10:00:00+00:00"
+  },
+  {
+    "id": 2,
+    "nombre": "Luis Pérez",
+    "email": "luis.perez@example.com",
+    "telefono": "5551001002",
+    "empresa": "Contoso",
+    "creado_en": "2026-01-16T11:30:00+00:00"
+  }
+]

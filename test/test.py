@@ -1,23 +1,24 @@
+import json
+from pathlib import Path
+
 import pytest
 
-from app import Cliente, app, db
+from app import app
 
 
 @pytest.fixture
-def client():
-    app.config.update(
-        TESTING=True,
-        SECRET_KEY="test-secret-key",
-        SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
-        SQLALCHEMY_TRACK_MODIFICATIONS=False,
-    )
+def client(tmp_path, monkeypatch):
+    data_path = tmp_path / "clientes.json"
+    data_path.write_text("[]", encoding="utf-8")
+    monkeypatch.setitem(app.config, "TESTING", True)
+    monkeypatch.setitem(app.config, "SECRET_KEY", "test-secret-key")
+    monkeypatch.setitem(app.config, "CLIENTES_JSON_PATH", str(data_path))
+    return app.test_client()
 
-    with app.app_context():
-        db.create_all()
-        yield app.test_client()
-        db.session.remove()
-        db.drop_all()
-        db.engine.dispose()
+
+def clientes_guardados(client):
+    data_path = Path(client.application.config["CLIENTES_JSON_PATH"])
+    return json.loads(data_path.read_text(encoding="utf-8"))
 
 
 def crear_cliente(client, nombre="Ana Gómez", email="ana@test.com", telefono="5551234", empresa="Acme"):
@@ -46,10 +47,10 @@ def test_crear_cliente_con_datos_validos(client):
 
     assert response.status_code == 200
     assert b"Cliente creado correctamente." in response.data
-    assert Cliente.query.count() == 1
-    cliente = Cliente.query.first()
-    assert cliente.nombre == "Ana Gómez"
-    assert cliente.email == "ana@test.com"
+    clientes = clientes_guardados(client)
+    assert len(clientes) == 1
+    assert clientes[0]["nombre"] == "Ana Gómez"
+    assert clientes[0]["email"] == "ana@test.com"
 
 
 def test_crear_cliente_rechaza_campos_obligatorios(client):
@@ -66,7 +67,7 @@ def test_crear_cliente_rechaza_campos_obligatorios(client):
 
     assert response.status_code == 200
     assert b"Nombre, email y telefono son obligatorios." in response.data
-    assert Cliente.query.count() == 0
+    assert clientes_guardados(client) == []
 
 
 def test_crear_cliente_rechaza_email_duplicado(client):
@@ -76,7 +77,7 @@ def test_crear_cliente_rechaza_email_duplicado(client):
 
     assert response.status_code == 200
     assert b"El email ya existe. Usa uno diferente." in response.data
-    assert Cliente.query.count() == 1
+    assert len(clientes_guardados(client)) == 1
 
 
 def test_editar_cliente_actualiza_datos(client):
@@ -95,9 +96,9 @@ def test_editar_cliente_actualiza_datos(client):
 
     assert response.status_code == 200
     assert b"Cliente actualizado correctamente." in response.data
-    cliente = db.session.get(Cliente, 1)
-    assert cliente.nombre == "Ana Editada"
-    assert cliente.email == "ana.nueva@test.com"
+    cliente = clientes_guardados(client)[0]
+    assert cliente["nombre"] == "Ana Editada"
+    assert cliente["email"] == "ana.nueva@test.com"
 
 
 def test_eliminar_cliente(client):
@@ -107,7 +108,7 @@ def test_eliminar_cliente(client):
 
     assert response.status_code == 200
     assert b"Cliente eliminado correctamente." in response.data
-    assert Cliente.query.count() == 0
+    assert clientes_guardados(client) == []
 
 
 def test_buscar_por_nombre_email_telefono_y_empresa(client):
@@ -121,3 +122,23 @@ def test_buscar_por_nombre_email_telefono_y_empresa(client):
 
     response = client.get("/?q=ana@otros.com")
     assert b"Ana L\xc3\xb3pez" in response.data
+
+
+def test_inicializa_desde_json_de_prueba_y_persiste_cambios(client, tmp_path, monkeypatch):
+    data_path = tmp_path / "inicializado.json"
+    monkeypatch.setitem(app.config, "CLIENTES_JSON_PATH", str(data_path))
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert b"Ana Garc\xc3\xada" in response.data
+    assert len(clientes_guardados(client)) == 2
+
+    crear_cliente(client, nombre="Marta Ruiz", email="marta@example.com")
+
+    with app.test_client() as nuevo_cliente:
+        response = nuevo_cliente.get("/")
+
+    assert response.status_code == 200
+    assert b"Marta Ruiz" in response.data
+    assert len(clientes_guardados(client)) == 3

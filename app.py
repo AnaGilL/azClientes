@@ -1,5 +1,9 @@
+import json
 import os
+import tempfile
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 
 if os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING"):
     from azure.monitor.opentelemetry import configure_azure_monitor
@@ -7,53 +11,105 @@ if os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING"):
     configure_azure_monitor()
 
 from flask import Flask, abort, flash, redirect, render_template, request, url_for
-from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy import or_
 
 app = Flask(__name__)
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///clientes.db"
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["CLIENTES_JSON_PATH"] = os.environ.get(
+    "CLIENTES_JSON_PATH", str(Path(app.instance_path) / "clientes.json")
+)
 app.config["SECRET_KEY"] = "cambia-esta-clave-secreta"
 
-db = SQLAlchemy(app)
 
-
-class Cliente(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    nombre = db.Column(db.String(120), nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    telefono = db.Column(db.String(30), nullable=False)
-    empresa = db.Column(db.String(120), nullable=True)
-    creado_en = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+@dataclass
+class Cliente:
+    id: int
+    nombre: str
+    email: str
+    telefono: str
+    empresa: str | None
+    creado_en: datetime
 
     def __repr__(self) -> str:
         return f"<Cliente {self.nombre}>"
 
 
-if os.getenv("WEBSITE_SITE_NAME"):
-    os.makedirs(app.instance_path, exist_ok=True)
-    with app.app_context():
-        db.create_all()
+def _escribir_json(path: Path, registros: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporal = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, delete=False
+        ) as archivo:
+            temporal = Path(archivo.name)
+            json.dump(registros, archivo, ensure_ascii=False, indent=2)
+            archivo.write("\n")
+            archivo.flush()
+            os.fsync(archivo.fileno())
+        os.replace(temporal, path)
+    finally:
+        if temporal and temporal.exists():
+            temporal.unlink()
+
+
+def _cargar_clientes() -> list[Cliente]:
+    path = Path(app.config["CLIENTES_JSON_PATH"])
+    if not path.exists():
+        semilla = Path(__file__).parent / "test" / "fixtures" / "clientes.json"
+        registros = json.loads(semilla.read_text(encoding="utf-8"))
+        _escribir_json(path, registros)
+
+    registros = json.loads(path.read_text(encoding="utf-8"))
+    return [
+        Cliente(
+            id=registro["id"],
+            nombre=registro["nombre"],
+            email=registro["email"],
+            telefono=registro["telefono"],
+            empresa=registro.get("empresa"),
+            creado_en=datetime.fromisoformat(registro["creado_en"]),
+        )
+        for registro in registros
+    ]
+
+
+def _guardar_clientes(clientes: list[Cliente]) -> None:
+    registros = [
+        {
+            "id": cliente.id,
+            "nombre": cliente.nombre,
+            "email": cliente.email,
+            "telefono": cliente.telefono,
+            "empresa": cliente.empresa,
+            "creado_en": cliente.creado_en.isoformat(),
+        }
+        for cliente in clientes
+    ]
+    _escribir_json(Path(app.config["CLIENTES_JSON_PATH"]), registros)
+
+
+def _siguiente_id(clientes: list[Cliente]) -> int:
+    return max((cliente.id for cliente in clientes), default=0) + 1
 
 
 @app.route("/")
 def listar_clientes():
     termino = request.args.get("q", "").strip()
-    consulta = Cliente.query
-
+    clientes = _cargar_clientes()
     if termino:
-        patron = f"%{termino}%"
-        consulta = consulta.filter(
-            or_(
-                Cliente.nombre.ilike(patron),
-                Cliente.email.ilike(patron),
-                Cliente.telefono.ilike(patron),
-                Cliente.empresa.ilike(patron),
+        termino = termino.casefold()
+        clientes = [
+            cliente
+            for cliente in clientes
+            if any(
+                termino in valor.casefold()
+                for valor in (
+                    cliente.nombre,
+                    cliente.email,
+                    cliente.telefono,
+                    cliente.empresa or "",
+                )
             )
-        )
-
-    clientes = consulta.order_by(Cliente.id.desc()).all()
+        ]
+    clientes.sort(key=lambda cliente: cliente.id, reverse=True)
     return render_template("index.html", clientes=clientes, termino=termino)
 
 
@@ -69,28 +125,32 @@ def crear_cliente():
             flash("Nombre, email y telefono son obligatorios.", "error")
             return render_template("form.html", titulo="Nuevo cliente", cliente=None)
 
-        nuevo_cliente = Cliente(
-            nombre=nombre,
-            email=email,
-            telefono=telefono,
-            empresa=empresa,
-        )
-
-        db.session.add(nuevo_cliente)
-        try:
-            db.session.commit()
-            flash("Cliente creado correctamente.", "success")
-            return redirect(url_for("listar_clientes"))
-        except IntegrityError:
-            db.session.rollback()
+        clientes = _cargar_clientes()
+        if any(cliente.email == email for cliente in clientes):
             flash("El email ya existe. Usa uno diferente.", "error")
+            return render_template("form.html", titulo="Nuevo cliente", cliente=None)
+
+        clientes.append(
+            Cliente(
+                id=_siguiente_id(clientes),
+                nombre=nombre,
+                email=email,
+                telefono=telefono,
+                empresa=empresa,
+                creado_en=datetime.now(timezone.utc),
+            )
+        )
+        _guardar_clientes(clientes)
+        flash("Cliente creado correctamente.", "success")
+        return redirect(url_for("listar_clientes"))
 
     return render_template("form.html", titulo="Nuevo cliente", cliente=None)
 
 
 @app.route("/clientes/<int:cliente_id>/editar", methods=["GET", "POST"])
 def editar_cliente(cliente_id: int):
-    cliente = db.session.get(Cliente, cliente_id)
+    clientes = _cargar_clientes()
+    cliente = next((item for item in clientes if item.id == cliente_id), None)
     if cliente is None:
         abort(404)
 
@@ -104,34 +164,33 @@ def editar_cliente(cliente_id: int):
             flash("Nombre, email y telefono son obligatorios.", "error")
             return render_template("form.html", titulo="Editar cliente", cliente=cliente)
 
+        if any(
+            item.id != cliente_id and item.email == email for item in clientes
+        ):
+            flash("El email ya existe. Usa uno diferente.", "error")
+            return render_template("form.html", titulo="Editar cliente", cliente=cliente)
+
         cliente.nombre = nombre
         cliente.email = email
         cliente.telefono = telefono
         cliente.empresa = empresa
-
-        try:
-            db.session.commit()
-            flash("Cliente actualizado correctamente.", "success")
-            return redirect(url_for("listar_clientes"))
-        except IntegrityError:
-            db.session.rollback()
-            flash("El email ya existe. Usa uno diferente.", "error")
+        _guardar_clientes(clientes)
+        flash("Cliente actualizado correctamente.", "success")
+        return redirect(url_for("listar_clientes"))
 
     return render_template("form.html", titulo="Editar cliente", cliente=cliente)
 
 
 @app.route("/clientes/<int:cliente_id>/eliminar", methods=["POST"])
 def eliminar_cliente(cliente_id: int):
-    cliente = db.session.get(Cliente, cliente_id)
-    if cliente is None:
+    clientes = _cargar_clientes()
+    restantes = [cliente for cliente in clientes if cliente.id != cliente_id]
+    if len(restantes) == len(clientes):
         abort(404)
-    db.session.delete(cliente)
-    db.session.commit()
+    _guardar_clientes(restantes)
     flash("Cliente eliminado correctamente.", "success")
     return redirect(url_for("listar_clientes"))
 
 
 if __name__ == "__main__":
-    with app.app_context():
-        db.create_all()
     app.run(debug=True)

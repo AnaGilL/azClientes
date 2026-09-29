@@ -2,7 +2,7 @@
 
 ## 1. Visión general
 
-Este proyecto es una aplicación web ligera para gestionar clientes con Flask. Su propósito es permitir registrar, consultar, editar y eliminar información de clientes en una base de datos SQLite, con una interfaz HTML simple generada por Jinja2.
+Este proyecto es una aplicación web ligera para gestionar clientes con Flask. Su propósito es permitir registrar, consultar, editar y eliminar información de clientes en un archivo JSON, con una interfaz HTML simple generada por Jinja2.
 
 La solución está pensada como una aplicación monolítica pequeña, con capas bien diferenciadas entre presentación, lógica de negocio y persistencia.
 
@@ -21,7 +21,7 @@ El punto de entrada es `app.py`.
 
 Responsabilidades:
 - crear la instancia de Flask
-- configurar la conexión a SQLite
+- configurar la persistencia JSON
 - definir el modelo de datos
 - registrar las rutas HTTP
 - gestionar mensajes flash y redirecciones
@@ -44,21 +44,15 @@ Campos principales:
 - `empresa`: empresa opcional
 - `creado_en`: timestamp de creación
 
-Este modelo usa SQLAlchemy para mapear la entidad a la base de datos SQLite.
+La entidad es un dataclass de Python. Los registros se serializan como objetos JSON, con `creado_en` en formato ISO 8601.
 
 ### 3.3. Persistencia
 
-La capa de persistencia se basa en:
-- Flask-SQLAlchemy
-- SQLite como motor de base de datos
+La capa de persistencia usa un archivo JSON configurable mediante `CLIENTES_JSON_PATH`.
 
-La configuración actual usa:
+Por defecto, el archivo local es `instance/clientes.json`. En Azure se guarda en `/home/data/clientes.json`, fuera del paquete publicado, para mantener los datos entre despliegues. Si aún no existe, se inicializa con `test/fixtures/clientes.json`.
 
-```python
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///clientes.db"
-```
-
-Esto hace que la base de datos se genere automáticamente al arrancar la aplicación y quede almacenada localmente en el proyecto.
+Las escrituras generan primero un archivo temporal en el mismo directorio y lo sustituyen de forma atómica para evitar dejar JSON parcialmente escrito. Este almacenamiento está pensado para una aplicación pequeña y no coordina escrituras concurrentes entre procesos.
 
 ### 3.4. Vistas y templates
 
@@ -80,7 +74,7 @@ En `static/` se encuentran los archivos CSS para el estilo visual de la interfaz
 
 Cuando el usuario accede a `/`:
 1. La ruta `listar_clientes()` lee el parámetro `q` de la query string.
-2. Si hay un término de búsqueda, genera un filtro con `or_()` para buscar coincidencias en nombre, email, teléfono y empresa.
+2. Si hay un término de búsqueda, filtra los registros JSON sin distinguir mayúsculas en nombre, email, teléfono y empresa.
 3. Ordena los clientes por ID descendente.
 4. Renderiza la vista `index.html` con el listado resultante.
 
@@ -90,8 +84,8 @@ Cuando se envía el formulario de `/clientes/nuevo`:
 1. Se valida que nombre, email y teléfono no estén vacíos.
 2. Se normaliza el email a minúsculas.
 3. Se crea una instancia de `Cliente`.
-4. Se guarda en la sesión de SQLAlchemy.
-5. Si la operación falla por duplicidad de email, se captura `IntegrityError` y se informa al usuario.
+4. Se añade a la lista cargada desde JSON y se escribe el archivo de forma atómica.
+5. Si el email ya existe, se informa al usuario y no se modifica el archivo.
 
 ### 4.3. Edición de clientes
 
@@ -100,14 +94,14 @@ Cuando se envía el formulario de `/clientes/<id>/editar`:
 2. Si no existe, la ruta responde con `404`.
 3. Se validan los datos del formulario.
 4. Se actualizan los atributos del objeto.
-5. Se confirma la transacción.
+5. Se persiste la lista actualizada en el archivo JSON.
 
 ### 4.4. Eliminación de clientes
 
 La ruta `/clientes/<id>/eliminar`:
 1. Busca el cliente por ID.
-2. Si existe, lo elimina de la base de datos.
-3. Confirma la operación y redirige al listado principal.
+2. Si existe, lo elimina de la lista y persiste el archivo JSON.
+3. Redirige al listado principal.
 
 ## 5. Patrones de diseño aplicados
 
@@ -153,8 +147,8 @@ Esto permite validar el comportamiento principal sin necesidad de interactuar ma
 ## 8. Decisiones de arquitectura
 
 - Se eligió Flask por su simplicidad y rapidez en la construcción de aplicaciones pequeñas.
-- SQLite se usa como base de datos local por su facilidad de uso y despliegue sin infraestructura adicional.
-- SQLAlchemy encapsula la lógica de acceso a datos y evita SQL manual.
+- JSON se usa como persistencia simple para una aplicación pequeña y para facilitar datos de prueba reproducibles.
+- El archivo se configura por entorno para separar el almacenamiento persistente del paquete desplegado en Azure.
 - El proyecto prioriza legibilidad y operación directa frente a una arquitectura más compleja.
 
 ## 9. Evolución recomendada
@@ -168,4 +162,4 @@ Si el proyecto crece, las mejoras más naturales serían:
 
 ## 10. Resumen
 
-La arquitectura actual es un monolito Flask con una base de datos SQLite y una capa de presentación en templates. Es una estructura ideal para aplicaciones pequeñas o medianas con gestión CRUD y pruebas automatizadas, y conserva una ejecución simple y mantenible.
+La arquitectura actual es un monolito Flask con persistencia JSON y una capa de presentación en templates. Es adecuada para una aplicación pequeña o pruebas automatizadas, y conserva una ejecución simple y mantenible.

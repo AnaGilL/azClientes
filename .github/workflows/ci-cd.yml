@@ -25,7 +25,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Verificar importacion
-        run: python -c "from app import app, db, Cliente; print('Build OK')"
+        run: python -c "from app import app, Cliente; print('Build OK')"
 
       - name: Ejecutar pruebas
         run: python -m pytest
@@ -119,6 +119,8 @@ jobs:
             --resource-group grClientes \
             --settings \
               SCM_DO_BUILD_DURING_DEPLOYMENT=true \
+              WEBSITES_ENABLE_APP_SERVICE_STORAGE=true \
+              CLIENTES_JSON_PATH=/home/data/clientes.json \
               APPLICATIONINSIGHTS_CONNECTION_STRING="$connection_string" \
             --output none
 

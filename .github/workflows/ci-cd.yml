@@ -45,6 +45,83 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Crear o actualizar infraestructura en Azure
+        env:
+          AZURE_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$AZURE_WEBAPP_NAME" ]]; then
+            echo "::error::Configura la variable AZURE_WEBAPP_NAME con un nombre globalmente unico."
+            exit 1
+          fi
+
+          az group create --name grClientes --location eastus --output none
+
+          if ! az appservice plan show --name aspClientes --resource-group grClientes --output none 2>/dev/null; then
+            az appservice plan create \
+              --name aspClientes \
+              --resource-group grClientes \
+              --location eastus \
+              --sku F1 \
+              --is-linux \
+              --output none
+          fi
+
+          if ! az monitor log-analytics workspace show --name lawClientes --resource-group grClientes --output none 2>/dev/null; then
+            az monitor log-analytics workspace create \
+              --name lawClientes \
+              --resource-group grClientes \
+              --location eastus \
+              --output none
+          fi
+
+          workspace_id=$(az monitor log-analytics workspace show \
+            --name lawClientes \
+            --resource-group grClientes \
+            --query id \
+            --output tsv)
+
+          if ! az monitor app-insights component show --app aiClientes --resource-group grClientes --output none 2>/dev/null; then
+            az monitor app-insights component create \
+              --app aiClientes \
+              --resource-group grClientes \
+              --location eastus \
+              --application-type web \
+              --kind web \
+              --workspace "$workspace_id" \
+              --output none
+          fi
+
+          if ! az webapp show --name "$AZURE_WEBAPP_NAME" --resource-group grClientes --output none 2>/dev/null; then
+            az webapp create \
+              --name "$AZURE_WEBAPP_NAME" \
+              --resource-group grClientes \
+              --plan aspClientes \
+              --runtime "PYTHON:3.12" \
+              --output none
+          fi
+
+          connection_string=$(az monitor app-insights component show \
+            --app aiClientes \
+            --resource-group grClientes \
+            --query connectionString \
+            --output tsv)
+
+          az webapp config set \
+            --name "$AZURE_WEBAPP_NAME" \
+            --resource-group grClientes \
+            --startup-file "gunicorn --bind=0.0.0.0 --timeout 600 app:app" \
+            --output none
+
+          az webapp config appsettings set \
+            --name "$AZURE_WEBAPP_NAME" \
+            --resource-group grClientes \
+            --settings \
+              SCM_DO_BUILD_DURING_DEPLOYMENT=true \
+              APPLICATIONINSIGHTS_CONNECTION_STRING="$connection_string" \
+            --output none
+
       - name: Empaquetar aplicacion
         run: |
           zip -r release.zip . \

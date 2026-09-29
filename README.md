@@ -37,3 +37,12 @@ Aplicacion web para administrar clientes con operaciones CRUD:
 - `templates/`: vistas HTML con Jinja2
 - `static/styles.css`: estilos
 - `clientes.db`: base de datos SQLite (se crea automaticamente)
+
+## Despliegue en Azure
+
+El workflow de GitHub Actions crea o reutiliza la infraestructura al hacer push a `main`. Antes del primer despliegue, configura en **Settings > Secrets and variables > Actions**:
+
+- Una variable de repositorio `AZURE_WEBAPP_NAME` con un nombre globalmente unico para la URL `<nombre>.azurewebsites.net`.
+- Un secreto `AZURE_CREDENTIALS` con las credenciales JSON del service principal usado por `azure/login`. Debe tener el rol `Contributor` en la suscripcion para crear el grupo de recursos.
+
+Se aprovisionan el grupo `grClientes`, un App Service Plan Linux F1, una Web App con Python 3.12, un workspace de Log Analytics y Application Insights en `eastus`. La Web App se inicia con Gunicorn y envía telemetría a Application Insights. F1 tiene límites de uso; la disponibilidad del SKU depende de la suscripción y la región, y la ingesta de telemetría puede generar cargos si supera las cuotas gratuitas.

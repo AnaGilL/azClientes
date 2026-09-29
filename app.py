@@ -1,4 +1,10 @@
+import os
 from datetime import datetime, timezone
+
+if os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING"):
+    from azure.monitor.opentelemetry import configure_azure_monitor
+
+    configure_azure_monitor()
 
 from flask import Flask, abort, flash, redirect, render_template, request, url_for
 from flask_sqlalchemy import SQLAlchemy
@@ -23,6 +29,12 @@ class Cliente(db.Model):
 
     def __repr__(self) -> str:
         return f"<Cliente {self.nombre}>"
+
+
+if os.getenv("WEBSITE_SITE_NAME"):
+    os.makedirs(app.instance_path, exist_ok=True)
+    with app.app_context():
+        db.create_all()
 
 
 @app.route("/")

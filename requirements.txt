@@ -1,3 +1,5 @@
 Flask==3.1.0
 Flask-SQLAlchemy==3.1.1
 pytest==8.3.3
+azure-monitor-opentelemetry==1.8.10
+gunicorn==26.2.0

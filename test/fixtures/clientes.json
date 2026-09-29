@@ -14,5 +14,13 @@
     "telefono": "5551001002",
     "empresa": "Contoso",
     "creado_en": "2026-01-16T11:30:00+00:00"
+  },
+  {
+    "id": 3,
+    "nombre": "Carla Méndez",
+    "email": "carla.mendez@example.com",
+    "telefono": "5551001003",
+    "empresa": "Fabrikam",
+    "creado_en": "2026-01-17T09:15:00+00:00"
   }
 ]

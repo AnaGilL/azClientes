@@ -132,7 +132,7 @@ def test_inicializa_desde_json_de_prueba_y_persiste_cambios(client, tmp_path, mo
 
     assert response.status_code == 200
     assert b"Ana Garc\xc3\xada" in response.data
-    assert len(clientes_guardados(client)) == 2
+    assert len(clientes_guardados(client)) == 3
 
     crear_cliente(client, nombre="Marta Ruiz", email="marta@example.com")
 
@@ -141,4 +141,4 @@ def test_inicializa_desde_json_de_prueba_y_persiste_cambios(client, tmp_path, mo
 
     assert response.status_code == 200
     assert b"Marta Ruiz" in response.data
-    assert len(clientes_guardados(client)) == 3
+    assert len(clientes_guardados(client)) == 4

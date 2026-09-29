@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
-from flask import Flask, flash, redirect, render_template, request, url_for
+from flask import Flask, abort, flash, redirect, render_template, request, url_for
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import or_
@@ -19,7 +19,7 @@ class Cliente(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     telefono = db.Column(db.String(30), nullable=False)
     empresa = db.Column(db.String(120), nullable=True)
-    creado_en = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    creado_en = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     def __repr__(self) -> str:
         return f"<Cliente {self.nombre}>"
@@ -78,7 +78,9 @@ def crear_cliente():
 
 @app.route("/clientes/<int:cliente_id>/editar", methods=["GET", "POST"])
 def editar_cliente(cliente_id: int):
-    cliente = Cliente.query.get_or_404(cliente_id)
+    cliente = db.session.get(Cliente, cliente_id)
+    if cliente is None:
+        abort(404)
 
     if request.method == "POST":
         nombre = request.form.get("nombre", "").strip()
@@ -108,7 +110,9 @@ def editar_cliente(cliente_id: int):
 
 @app.route("/clientes/<int:cliente_id>/eliminar", methods=["POST"])
 def eliminar_cliente(cliente_id: int):
-    cliente = Cliente.query.get_or_404(cliente_id)
+    cliente = db.session.get(Cliente, cliente_id)
+    if cliente is None:
+        abort(404)
     db.session.delete(cliente)
     db.session.commit()
     flash("Cliente eliminado correctamente.", "success")
